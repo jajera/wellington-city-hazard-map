@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Wellington City hazard map">
+  <rect width="32" height="32" rx="7" fill="#0b5cad"/>
+  <path fill="#fff" d="M16 5.5c-3.4 0-6.2 2.7-6.2 6.1 0 4.6 5.4 11.2 5.8 11.7a.6.6 0 0 0 .9 0c.4-.5 5.8-7.1 5.8-11.7 0-3.4-2.8-6.1-6.3-6.1zm0 8.8a2.7 2.7 0 1 1 0-5.4 2.7 2.7 0 0 1 0 5.4z"/>
+  <circle cx="16" cy="11.5" r="2.2" fill="#b42318"/>
+</svg>
