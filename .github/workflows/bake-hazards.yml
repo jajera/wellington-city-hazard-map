@@ -1,0 +1,76 @@
+name: Bake Hazards
+
+on:
+  schedule:
+    # Weekly Monday 03:17 UTC (off the hour to avoid scheduler pile-up)
+    - cron: "17 3 * * 1"
+  workflow_dispatch: {}
+
+concurrency:
+  group: bake-hazards
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Bake hazards.geojson
+        run: python3 scripts/bake_hazards.py
+
+      - name: Open PR and enable auto-merge
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- hazards.geojson; then
+            echo "No hazards.geojson changes"
+            exit 0
+          fi
+
+          branch="chore/bake-hazards"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git checkout -B "$branch"
+          git add hazards.geojson
+          git commit -m "chore: refresh baked hazards.geojson from upstream layers" \
+            -m "Scheduled bake of WCC/GWRC ArcGIS overlays into hazards.geojson."
+          git push -u origin "$branch" --force
+
+          pr="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')"
+          if [ -z "$pr" ]; then
+            pr="$(gh pr create \
+              --base main \
+              --head "$branch" \
+              --title "chore: refresh baked hazards.geojson from upstream layers" \
+              --body "$(cat <<'EOF'
+## Summary
+- Scheduled rebake of `hazards.geojson` from WCC/GWRC ArcGIS layers
+
+## Test plan
+- [ ] Pages deploy succeeds after merge
+- [ ] Spot-check a known pin still reports expected overlays
+EOF
+)")"
+            pr="${pr##*/}"
+          fi
+
+          gh pr merge "$pr" --squash --auto \
+            --subject "chore: refresh baked hazards.geojson from upstream layers" \
+            --body "Scheduled bake of WCC/GWRC ArcGIS overlays into hazards.geojson."

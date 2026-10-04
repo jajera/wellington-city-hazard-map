@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Wellington City house hazard check</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;600;700&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.css"/>
+<style>
+  :root {
+    --bg: #f4f6f8;
+    --panel: #fff;
+    --line: #d7dee6;
+    --txt: #1a2430;
+    --muted: #5c6b7a;
+    --accent: #0b5cad;
+    --ok: #0f7a45;
+    --watch: #b42318;
+    --info: #854d0e;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--txt);
+    font: 14px/1.45 "Public Sans", "Segoe UI", sans-serif;
+  }
+  #map { position: absolute; inset: 0; }
+  .ui {
+    position: absolute; z-index: 2; top: 12px; left: 12px;
+    width: min(380px, calc(100vw - 24px));
+    display: flex; flex-direction: column; gap: 10px;
+    max-height: calc(100vh - 24px); pointer-events: none;
+  }
+  .ui > * { pointer-events: auto; }
+  .card {
+    background: rgba(255,255,255,.95);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px;
+    box-shadow: 0 10px 28px rgba(16,24,40,.12);
+  }
+  .card.scroll { overflow: auto; }
+  h1 { margin: 0; font-size: 16px; font-weight: 700; }
+  .sub { color: var(--muted); font-size: 12.5px; margin: 4px 0 0; }
+  .search { display: flex; gap: 8px; margin-top: 12px; }
+  .search input {
+    flex: 1; min-width: 0; border: 1px solid var(--line);
+    border-radius: 8px; padding: 9px 11px; font: inherit;
+  }
+  .search input:focus {
+    outline: 2px solid color-mix(in srgb, var(--accent) 35%, white);
+    border-color: var(--accent);
+  }
+  button {
+    border: 0; border-radius: 8px; background: var(--accent); color: #fff;
+    font: 600 13px/1 inherit; padding: 0 14px; cursor: pointer;
+  }
+  button:disabled { opacity: .5; cursor: wait; }
+  button.ghost {
+    background: #fff; color: var(--muted); border: 1px solid var(--line); padding: 8px 10px;
+  }
+  .actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  details.filters { margin-top: 10px; font-size: 12.5px; color: var(--muted); }
+  details.filters summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+  .groups {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; margin-top: 8px;
+  }
+  label.row {
+    display: flex; gap: 6px; align-items: center; font-size: 12.5px; cursor: pointer; color: var(--txt);
+  }
+  .disclaimer { color: var(--muted); font-size: 11px; line-height: 1.45; margin-top: 10px; }
+  .result h2 {
+    margin: 0 0 6px; font-size: 11px; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .verdict { font-size: 17px; font-weight: 750; margin: 0 0 4px; }
+  .verdict.watch { color: var(--watch); }
+  .verdict.clear { color: var(--ok); }
+  .verdict.idle { color: var(--muted); font-size: 15px; font-weight: 600; }
+  .also { color: var(--muted); font-size: 12px; margin: 0 0 8px; }
+  .place { color: var(--muted); font-size: 12px; margin: 0 0 10px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    border-radius: 999px; padding: 5px 10px 5px 7px;
+    font-size: 12px; font-weight: 650; color: #fff;
+    box-shadow: 0 1px 2px rgba(0,0,0,.12);
+  }
+  .chip .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #fff; opacity: .95;
+  }
+  .hit {
+    display: grid;
+    grid-template-columns: 6px 1fr;
+    gap: 10px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px 10px 10px 0;
+    margin-bottom: 8px;
+    background: #fff;
+  }
+  .hit .bar { border-radius: 0 4px 4px 0; min-height: 100%; }
+  .hit h3 { margin: 0 0 2px; font-size: 13px; font-weight: 700; }
+  .hit p { margin: 0; font-size: 12px; color: var(--muted); }
+  .hit a { color: var(--accent); }
+  .empty-note { font-size: 12.5px; color: var(--muted); margin: 0; }
+  .legend {
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line);
+  }
+  .legend h2 { margin-bottom: 8px; }
+  .legend-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 5px 10px;
+  }
+  .legend-item {
+    display: flex; gap: 7px; align-items: center;
+    font-size: 11.5px; color: var(--muted);
+  }
+  .legend-swatch {
+    width: 12px; height: 12px; border-radius: 3px; flex: 0 0 auto;
+    border: 1px solid rgba(0,0,0,.12);
+  }
+  @media (max-width: 640px) {
+    .ui { top: auto; bottom: 12px; left: 12px; right: 12px; width: auto; max-height: 52vh; }
+  }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="ui">
+  <section class="card">
+    <h1>Wellington City house hazard check</h1>
+    <p class="sub">
+      Wellington City only. Faint overlays stay on the map; click or search for a
+      pin report. Share the URL to reopen the same place.
+    </p>
+    <form class="search" id="search-form">
+      <input id="q" type="search" placeholder="e.g. 12 Cuba Street, Te Aro" autocomplete="off"/>
+      <button type="submit" id="search-btn">Check</button>
+    </form>
+    <details class="filters">
+      <summary>Map &amp; report layers</summary>
+      <div class="groups" id="group-toggles"></div>
+    </details>
+    <p class="disclaimer">
+      Wellington City Council planning / modelled / register data — not a LIM,
+      not insurance advice, not live emergency info. In an emergency call 111.
+      Sources via
+      <a href="https://github.com/claudecommunity-nz/wcc-emergency-gis-data" style="color:var(--accent)">wcc-emergency-gis-data</a>.
+    </p>
+  </section>
+
+  <section class="card scroll result">
+    <h2>At this pin</h2>
+    <p class="verdict idle" id="verdict">Click the map or search an address</p>
+    <p class="also" id="also" hidden></p>
+    <p class="place" id="place"></p>
+    <div class="chips" id="chips" hidden></div>
+    <div id="report"></div>
+    <div class="legend">
+      <h2>Map colour key</h2>
+      <div class="legend-grid" id="legend"></div>
+    </div>
+    <div class="actions">
+      <button type="button" class="ghost" id="share-btn" hidden>Copy link</button>
+      <button type="button" class="ghost" id="clear-btn" hidden>Clear</button>
+    </div>
+  </section>
+</div>
+
+<script src="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.js"></script>
+<script>
+const STYLE = "https://tiles.openfreemap.org/styles/liberty";
+const HAZARDS_URL = "./hazards.geojson";
+const CITY_URL = "./wellington-city.geojson";
+const WELLINGTON = [174.7762, -41.2865];
+const EQ_RADIUS_M = 150;
+// WCC suburb extent (+ small pad for map chrome)
+const CITY_BOUNDS = [
+  [174.613106 - 0.02, -41.36238 - 0.02],
+  [174.895409 + 0.02, -41.14354 + 0.02],
+];
+
+/**
+ * House-hunting groups.
+ * rank: higher = more consequential for the verdict headline.
+ * kind: watch elevates summary; info stays contextual.
+ */
+const GROUPS = [
+  { id: "tsunami", label: "Tsunami", short: "Tsunami", kind: "watch", rank: 100, color: "#E31A1C",
+    layers: ["tsunami-evac", "tsunami-high", "tsunami-med", "tsunami-low"] },
+  { id: "fault", label: "Active fault overlay", short: "Fault", kind: "watch", rank: 95, color: "#730000",
+    layers: ["fault-wellington", "fault-ohariu", "fault-shepherds", "fault-terawhiti"] },
+  { id: "coastal", label: "Coastal inundation", short: "Coastal inundation", kind: "watch", rank: 90, color: "#73004C",
+    layers: ["coastal-high", "coastal-medium"] },
+  { id: "flood", label: "Flood / surface water", short: "Flood", kind: "watch", rank: 85, color: "#65C7EA",
+    layers: ["ponding", "stream-corridor", "overland-flowpath"] },
+  { id: "earthquake", label: "EQ-prone buildings nearby", short: "EQ-prone building nearby", kind: "watch", rank: 80, color: "#DC2626",
+    layers: ["eq-prone"], nearby: true },
+  { id: "liquefaction", label: "Liquefaction", short: "Liquefaction", kind: "watch", rank: 75, color: "#E6E600",
+    layers: ["liquefaction"] },
+  { id: "landslide", label: "Slope failure (in city)", short: "Slope failure", kind: "watch", rank: 70, color: "#FD8D3C",
+    layers: ["slope-failure"] },
+  { id: "wind", label: "Wind zone", short: "Wind zone", kind: "info", rank: 10, color: "#3182BD",
+    layers: ["wind-zones"] },
+];
+
+const map = new maplibregl.Map({
+  container: "map",
+  style: STYLE,
+  center: WELLINGTON,
+  zoom: 11.6,
+  maxBounds: CITY_BOUNDS,
+  maxBoundsViscosity: 0.9,
+  minZoom: 10,
+  maxZoom: 18,
+});
+map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+
+let hazards = null;
+let city = null;
+let marker = null;
+let hitFids = [];
+let nearEq = [];
+let lastPlaceLabel = null;
+/** Cached [minLng, minLat, maxLng, maxLat] per feature index */
+let bboxes = [];
+
+const togglesEl = document.getElementById("group-toggles");
+GROUPS.forEach((g) => {
+  const lab = document.createElement("label");
+  lab.className = "row";
+  // Wind covers the whole city — off by default so overlays stay readable
+  const on = g.id !== "wind";
+  lab.innerHTML = `<input type="checkbox" id="tog-${g.id}"${on ? " checked" : ""}/><span>${g.label}</span>`;
+  togglesEl.appendChild(lab);
+});
+
+const verdictEl = document.getElementById("verdict");
+const alsoEl = document.getElementById("also");
+const placeEl = document.getElementById("place");
+const chipsEl = document.getElementById("chips");
+const reportEl = document.getElementById("report");
+const legendEl = document.getElementById("legend");
+const clearBtn = document.getElementById("clear-btn");
+const shareBtn = document.getElementById("share-btn");
+const searchBtn = document.getElementById("search-btn");
+const qInput = document.getElementById("q");
+
+legendEl.innerHTML = GROUPS.map((g) =>
+  `<div class="legend-item"><span class="legend-swatch" style="background:${g.color}"></span>${g.label}</div>`
+).join("");
+
+function ringContains(ring, lng, lat) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0], yi = ring[i][1];
+    const xj = ring[j][0], yj = ring[j][1];
+    const intersect = (yi > lat) !== (yj > lat) &&
+      lng < ((xj - xi) * (lat - yi)) / (yj - yi || 1e-15) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+function polygonContains(coords, lng, lat) {
+  if (!ringContains(coords[0], lng, lat)) return false;
+  for (let i = 1; i < coords.length; i++) {
+    if (ringContains(coords[i], lng, lat)) return false;
+  }
+  return true;
+}
+function featureContains(f, lng, lat) {
+  const g = f.geometry;
+  if (!g) return false;
+  if (g.type === "Polygon") return polygonContains(g.coordinates, lng, lat);
+  if (g.type === "MultiPolygon") return g.coordinates.some((p) => polygonContains(p, lng, lat));
+  return false;
+}
+function haversineM(lng1, lat1, lng2, lat2) {
+  const R = 6371000, toR = Math.PI / 180;
+  const dLat = (lat2 - lat1) * toR, dLng = (lng2 - lng1) * toR;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * toR) * Math.cos(lat2 * toR) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+function expandBbox(box, lng, lat) {
+  if (!box) return [lng, lat, lng, lat];
+  box[0] = Math.min(box[0], lng);
+  box[1] = Math.min(box[1], lat);
+  box[2] = Math.max(box[2], lng);
+  box[3] = Math.max(box[3], lat);
+  return box;
+}
+function geomBbox(geom) {
+  if (!geom) return null;
+  let box = null;
+  const walk = (coords, depth) => {
+    if (depth === 0) {
+      box = expandBbox(box, coords[0], coords[1]);
+      return;
+    }
+    for (const c of coords) walk(c, depth - 1);
+  };
+  if (geom.type === "Point") walk(geom.coordinates, 0);
+  else if (geom.type === "Polygon") walk(geom.coordinates, 2);
+  else if (geom.type === "MultiPolygon") walk(geom.coordinates, 3);
+  return box;
+}
+function bboxContains(box, lng, lat) {
+  return box && lng >= box[0] && lng <= box[2] && lat >= box[1] && lat <= box[3];
+}
+
+function enabledGroups() {
+  return GROUPS.filter((g) => document.getElementById(`tog-${g.id}`).checked);
+}
+function enabledGroupIds() {
+  return enabledGroups().map((g) => g.id);
+}
+
+/** Suburb name if inside Wellington City, else null. */
+function citySuburbAt(lng, lat) {
+  if (!city) return null;
+  for (const f of city.features) {
+    if (featureContains(f, lng, lat)) return f.properties.suburb || "Wellington City";
+  }
+  return null;
+}
+
+function setIdle(msg) {
+  verdictEl.className = "verdict idle";
+  verdictEl.textContent = msg;
+  alsoEl.hidden = true;
+  alsoEl.textContent = "";
+  placeEl.textContent = "";
+  chipsEl.hidden = true;
+  chipsEl.innerHTML = "";
+  reportEl.innerHTML = "";
+  clearBtn.hidden = true;
+  shareBtn.hidden = true;
+  hitFids = [];
+  nearEq = [];
+  lastPlaceLabel = null;
+  paintHits();
+}
+
+function chipHtml(label, color, info = false) {
+  const textColor = info || isLight(color) ? "#1a2430" : "#fff";
+  const border = info || isLight(color) ? "border:1px solid #d7dee6;" : "";
+  return `<span class="chip" style="background:${color};color:${textColor};${border}"><span class="dot" style="background:${textColor};opacity:.35"></span>${label}</span>`;
+}
+
+function isLight(hex) {
+  const h = hex.replace("#", "");
+  if (h.length !== 6) return false;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return (r * 299 + g * 587 + b * 114) / 1000 > 160;
+}
+function ensureMarker(lngLat) {
+  if (!marker) marker = new maplibregl.Marker({ color: "#b42318" }).setLngLat(lngLat).addTo(map);
+  else marker.setLngLat(lngLat);
+  clearBtn.hidden = false;
+  shareBtn.hidden = false;
+}
+function clearPin() {
+  if (marker) { marker.remove(); marker = null; }
+  syncUrl(null);
+  setIdle("Click inside Wellington City, or search a city address");
+}
+
+function groupFilterExpr(ids) {
+  if (!ids.length) return ["==", ["get", "group"], "__none__"];
+  return ["in", ["get", "group"], ["literal", ids]];
+}
+
+function syncOverlayFilters() {
+  if (!map.getLayer("overlay-fill")) return;
+  const ids = enabledGroupIds();
+  const poly = ["all",
+    ["!=", ["get", "group"], "earthquake"],
+    groupFilterExpr(ids),
+  ];
+  const eq = ["all",
+    ["==", ["get", "group"], "earthquake"],
+    groupFilterExpr(ids),
+  ];
+  map.setFilter("overlay-fill", poly);
+  map.setFilter("overlay-line", poly);
+  map.setFilter("overlay-eq", eq);
+}
+
+function paintHits() {
+  if (!map.getLayer("hit-fill")) return;
+  const polyFilter = hitFids.length
+    ? ["all", ["!=", ["get", "group"], "earthquake"], ["in", ["get", "fid"], ["literal", hitFids]]]
+    : ["==", ["get", "fid"], -1];
+  map.setFilter("hit-fill", polyFilter);
+  map.setFilter("hit-line", polyFilter);
+
+  const eqIds = nearEq.map((f) => f.properties.fid);
+  const eqFilter = eqIds.length
+    ? ["in", ["get", "fid"], ["literal", eqIds]]
+    : ["==", ["get", "fid"], -1];
+  map.setFilter("hit-eq", eqFilter);
+}
+
+function slopeIsWatch(detail) {
+  const d = (detail || "").toLowerCase();
+  return d.includes("high") || d.includes("5") || d.includes("4") || d.includes("moderate") || d.includes("3");
+}
+
+function layerSeverityBoost(layer, detail) {
+  const d = (detail || "").toLowerCase();
+  if (layer === "tsunami-evac") {
+    if (d.includes("red") || d.includes("shore")) return 12;
+    if (d.includes("orange") || d.includes("cdem")) return 6;
+    return 0;
+  }
+  if (layer === "tsunami-high" || layer === "coastal-high") return 8;
+  if (layer === "tsunami-med" || layer === "coastal-medium") return 3;
+  if (layer === "ponding" || layer === "stream-corridor") return 4;
+  if (layer === "overland-flowpath") return 1;
+  if (layer?.startsWith("fault-")) return 5;
+  if (layer === "slope-failure") {
+    if (d.includes("5") || d.includes("high")) return 8;
+    if (d.includes("4") || d.includes("moderate") || d.includes("3")) return 3;
+    return -20;
+  }
+  return 0;
+}
+
+function scorePresent(item) {
+  const base = item.g.rank;
+  let boost = 0;
+  for (const f of item.features || []) {
+    boost = Math.max(boost, layerSeverityBoost(f.properties.layer, f.properties.detail));
+  }
+  if (item.g.nearby && item.rows.length) boost = Math.max(boost, 4);
+  return base + boost;
+}
+
+function headlineFor(item) {
+  const g = item.g;
+  if (g.id === "tsunami") {
+    const d = (item.rows[0]?.detail || "").toLowerCase();
+    if (d.includes("red") || d.includes("shore")) return "Shore exclusion (tsunami) at this pin";
+    if (d.includes("orange") || d.includes("cdem")) return "Tsunami evacuation zone at this pin";
+    if (d.includes("yellow") || d.includes("self")) return "Self-evacuation tsunami zone at this pin";
+    return "Tsunami overlay at this pin";
+  }
+  if (g.id === "fault") return "Active fault overlay at this pin";
+  if (g.id === "coastal") {
+    const high = (item.features || []).some((f) => f.properties.layer === "coastal-high");
+    return high ? "High coastal inundation at this pin" : "Coastal inundation at this pin";
+  }
+  if (g.id === "flood") return "Flood / surface-water overlay at this pin";
+  if (g.id === "earthquake") {
+    const n = item.rows.length;
+    return n === 1
+      ? "Earthquake-prone building nearby"
+      : `${n} earthquake-prone buildings nearby`;
+  }
+  if (g.id === "liquefaction") return "Liquefaction overlay at this pin";
+  if (g.id === "landslide") return "Elevated slope-failure susceptibility";
+  return `${g.short} at this pin`;
+}
+
+function setVerdict(present) {
+  const watches = present
+    .filter((p) => p.status === "watch")
+    .sort((a, b) => scorePresent(b) - scorePresent(a));
+  const infos = present.filter((p) => p.status === "info");
+
+  alsoEl.hidden = true;
+  alsoEl.textContent = "";
+
+  if (!watches.length) {
+    if (infos.length) {
+      verdictEl.className = "verdict clear";
+      verdictEl.textContent = "Context only (e.g. wind / low slope)";
+    } else {
+      verdictEl.className = "verdict clear";
+      verdictEl.textContent = "No overlays at this pin";
+    }
+    return;
+  }
+
+  verdictEl.className = "verdict watch";
+  verdictEl.textContent = headlineFor(watches[0]);
+
+  if (watches.length > 1) {
+    const rest = watches.slice(1).map((w) => w.g.short);
+    alsoEl.hidden = false;
+    alsoEl.textContent = rest.length === 1
+      ? `Also: ${rest[0]}`
+      : `Also: ${rest.slice(0, -1).join(", ")} and ${rest[rest.length - 1]}`;
+  } else if (infos.length) {
+    alsoEl.hidden = false;
+    alsoEl.textContent = `Also: ${infos.map((i) => i.g.short).join(", ")}`;
+  }
+}
+
+function syncUrl(lngLat, placeLabel) {
+  const url = new URL(window.location.href);
+  ["lat", "lng", "q"].forEach((k) => url.searchParams.delete(k));
+  if (lngLat) {
+    const lng = lngLat.lng ?? lngLat[0];
+    const lat = lngLat.lat ?? lngLat[1];
+    url.searchParams.set("lat", lat.toFixed(5));
+    url.searchParams.set("lng", lng.toFixed(5));
+    if (placeLabel) url.searchParams.set("q", placeLabel);
+  }
+  history.replaceState(null, "", url.pathname + url.search + url.hash);
+}
+
+function shareUrl() {
+  if (!marker) return;
+  syncUrl(marker.getLngLat(), lastPlaceLabel);
+  const link = window.location.href;
+  navigator.clipboard.writeText(link).then(() => {
+    const prev = shareBtn.textContent;
+    shareBtn.textContent = "Copied";
+    setTimeout(() => { shareBtn.textContent = prev; }, 1400);
+  }).catch(() => {
+    window.prompt("Copy this link:", link);
+  });
+}
+
+function queryAt(lngLat, placeLabel, { sync = true } = {}) {
+  if (!hazards || !city) return;
+  const lng = lngLat.lng ?? lngLat[0];
+  const lat = lngLat.lat ?? lngLat[1];
+  const suburb = citySuburbAt(lng, lat);
+
+  if (!suburb) {
+    ensureMarker({ lng, lat });
+    hitFids = [];
+    nearEq = [];
+    paintHits();
+    chipsEl.hidden = true;
+    chipsEl.innerHTML = "";
+    alsoEl.hidden = true;
+    alsoEl.textContent = "";
+    verdictEl.className = "verdict idle";
+    verdictEl.textContent = "Outside Wellington City";
+    placeEl.textContent = placeLabel
+      ? `${placeLabel} — not in WCC boundary`
+      : `${lat.toFixed(5)}, ${lng.toFixed(5)} — not in WCC boundary`;
+    reportEl.innerHTML =
+      "<p class=\"empty-note\">This tool only covers Wellington City. Try a pin inside the city outline.</p>";
+    lastPlaceLabel = placeLabel || null;
+    if (sync) syncUrl({ lng, lat }, lastPlaceLabel);
+    clearBtn.hidden = false;
+    shareBtn.hidden = false;
+    return;
+  }
+
+  ensureMarker({ lng, lat });
+  lastPlaceLabel = placeLabel || null;
+  if (sync) syncUrl({ lng, lat }, lastPlaceLabel);
+
+  const active = enabledGroups();
+  const activeLayer = new Set(active.flatMap((g) => g.layers));
+
+  const polyHits = [];
+  const eqHits = [];
+
+  for (let i = 0; i < hazards.features.length; i++) {
+    const f = hazards.features[i];
+    const p = f.properties;
+    if (!activeLayer.has(p.layer)) continue;
+    if (p.group === "earthquake") {
+      const c = f.geometry && f.geometry.coordinates;
+      if (!c) continue;
+      const dist = haversineM(lng, lat, c[0], c[1]);
+      if (dist <= EQ_RADIUS_M) eqHits.push({ f, dist });
+      continue;
+    }
+    const box = bboxes[i];
+    if (box && !bboxContains(box, lng, lat)) continue;
+    if (featureContains(f, lng, lat)) polyHits.push(f);
+  }
+
+  eqHits.sort((a, b) => a.dist - b.dist);
+  nearEq = eqHits.slice(0, 8).map((x) => x.f);
+  hitFids = polyHits.map((f) => f.properties.fid);
+  paintHits();
+
+  const coords = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  placeEl.textContent = placeLabel
+    ? `${placeLabel} · ${suburb}`
+    : `${suburb} · ${coords}`;
+
+  const present = [];
+
+  for (const g of active) {
+    const rows = [];
+    const features = [];
+    let status = null;
+    let chipColor = g.color;
+
+    if (g.nearby) {
+      if (!eqHits.length) continue;
+      status = "watch";
+      for (const { f, dist } of eqHits.slice(0, 5)) {
+        features.push(f);
+        const addr = (f.properties.detail || "").split(" · ")[0];
+        const url = (f.properties.detail || "").split(" · ")[1];
+        const link = url
+          ? ` · <a href="${url}" target="_blank" rel="noopener">register</a>`
+          : "";
+        rows.push({
+          title: addr || "Earthquake-prone building",
+          detail: `${Math.round(dist)} m away${link}`,
+          color: f.properties.fill || g.color,
+        });
+      }
+    } else {
+      const gh = polyHits.filter((f) => g.layers.includes(f.properties.layer));
+      if (!gh.length) continue;
+      const seen = new Set();
+      for (const f of gh) {
+        features.push(f);
+        const key = f.properties.layer + "|" + f.properties.detail;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        rows.push({
+          title: f.properties.layerLabel,
+          detail: f.properties.detail || "Published overlay",
+          color: f.properties.fill || g.color,
+        });
+        chipColor = f.properties.fill || g.color;
+      }
+      if (g.kind === "info") {
+        status = "info";
+      } else if (g.id === "landslide") {
+        const anyWatch = gh.some((f) => slopeIsWatch(f.properties.detail));
+        status = anyWatch ? "watch" : "info";
+      } else {
+        status = "watch";
+      }
+    }
+
+    present.push({ g, status, rows, chipColor, features });
+  }
+
+  // Stable report order: severity, then original group order
+  present.sort((a, b) => {
+    const sa = a.status === "watch" ? scorePresent(a) : a.g.rank * 0.01;
+    const sb = b.status === "watch" ? scorePresent(b) : b.g.rank * 0.01;
+    return sb - sa;
+  });
+
+  chipsEl.hidden = present.length === 0;
+  chipsEl.innerHTML = present.map(({ g, status, chipColor }) =>
+    chipHtml(g.label, chipColor, status === "info" || isLight(chipColor))
+  ).join("");
+
+  if (!present.length) {
+    reportEl.innerHTML =
+      "<p class=\"empty-note\">No published overlays from the checked set at this pin.</p>";
+  } else {
+    reportEl.innerHTML = present.map(({ g, status, rows }) => {
+      const cards = rows.map((r) => `
+        <div class="hit">
+          <div class="bar" style="background:${r.color}"></div>
+          <div>
+            <h3>${r.title}</h3>
+            <p>${r.detail}</p>
+          </div>
+        </div>`).join("");
+      const note = status === "info"
+        ? "<p class=\"empty-note\" style=\"margin:-2px 0 8px\">Context (not scored as a watch item)</p>"
+        : "";
+      return `${note}${cards}`;
+    }).join("");
+  }
+
+  setVerdict(present);
+}
+
+async function geocode(query) {
+  const url = "https://photon.komoot.io/api/?" + new URLSearchParams({
+    q: query.includes("Wellington") ? query : `${query}, Wellington`,
+    lat: String(WELLINGTON[1]),
+    lon: String(WELLINGTON[0]),
+    limit: "8",
+    lang: "en",
+  });
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("geocoder HTTP " + res.status);
+  const data = await res.json();
+  const feats = data.features || [];
+  for (const f of feats) {
+    const [lng, lat] = f.geometry.coordinates;
+    if (!citySuburbAt(lng, lat)) continue;
+    const p = f.properties || {};
+    const label = [p.housenumber, p.street || p.name, p.city || p.district].filter(Boolean).join(" ");
+    return { lng, lat, label: label || query };
+  }
+  if (!feats[0]) throw new Error("No results");
+  const [lng, lat] = feats[0].geometry.coordinates;
+  const p = feats[0].properties || {};
+  const label = [p.housenumber, p.street || p.name, p.city || p.district].filter(Boolean).join(" ");
+  return { lng, lat, label: label || query, outside: !citySuburbAt(lng, lat) };
+}
+
+async function applyUrlState() {
+  const params = new URLSearchParams(window.location.search);
+  const q = params.get("q");
+  const lat = parseFloat(params.get("lat"));
+  const lng = parseFloat(params.get("lng"));
+
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    map.flyTo({ center: [lng, lat], zoom: 16.5, essential: true });
+    map.once("moveend", () => queryAt({ lng, lat }, q, { sync: true }));
+    if (q) qInput.value = q;
+    return;
+  }
+  if (q) {
+    qInput.value = q;
+    try {
+      const hit = await geocode(q);
+      map.flyTo({ center: [hit.lng, hit.lat], zoom: 16.5, essential: true });
+      map.once("moveend", () => queryAt({ lng: hit.lng, lat: hit.lat }, hit.label, { sync: true }));
+    } catch (err) {
+      setIdle("Address not found — try a Wellington City street address");
+      console.error(err);
+    }
+  }
+}
+
+map.on("load", async () => {
+  const [hazRes, cityRes] = await Promise.all([
+    fetch(HAZARDS_URL),
+    fetch(CITY_URL),
+  ]);
+  if (!hazRes.ok || !cityRes.ok) {
+    setIdle("Failed to load city / hazard data");
+    return;
+  }
+  hazards = await hazRes.json();
+  city = await cityRes.json();
+  hazards.features.forEach((f, i) => {
+    f.properties.fid = i;
+    bboxes[i] = geomBbox(f.geometry);
+  });
+
+  map.addSource("city", { type: "geojson", data: city });
+  map.addLayer({
+    id: "city-fill",
+    type: "fill",
+    source: "city",
+    paint: { "fill-color": "#0b5cad", "fill-opacity": 0.03 },
+  });
+  map.addLayer({
+    id: "city-outline",
+    type: "line",
+    source: "city",
+    paint: {
+      "line-color": "#0b5cad",
+      "line-width": 1.25,
+      "line-opacity": 0.55,
+    },
+  });
+
+  map.addSource("hazards", { type: "geojson", data: hazards });
+
+  // Always-on faint overlays (toggles filter which groups show)
+  map.addLayer({
+    id: "overlay-fill", type: "fill", source: "hazards",
+    filter: ["!=", ["get", "group"], "earthquake"],
+    paint: {
+      "fill-color": ["coalesce", ["get", "fill"], "#64748B"],
+      "fill-opacity": 0.16,
+    },
+  });
+  map.addLayer({
+    id: "overlay-line", type: "line", source: "hazards",
+    filter: ["!=", ["get", "group"], "earthquake"],
+    paint: {
+      "line-color": ["coalesce", ["get", "line"], ["get", "fill"], "#334155"],
+      "line-width": 0.8,
+      "line-opacity": 0.35,
+    },
+  });
+  map.addLayer({
+    id: "overlay-eq", type: "circle", source: "hazards",
+    filter: ["==", ["get", "group"], "earthquake"],
+    paint: {
+      "circle-radius": 3.5,
+      "circle-color": ["coalesce", ["get", "fill"], "#DC2626"],
+      "circle-stroke-color": "#fff",
+      "circle-stroke-width": 0.8,
+      "circle-opacity": 0.55,
+    },
+  });
+
+  // Stronger highlight for the active pin
+  map.addLayer({
+    id: "hit-fill", type: "fill", source: "hazards",
+    filter: ["==", ["get", "fid"], -1],
+    paint: {
+      "fill-color": ["coalesce", ["get", "fill"], "#64748B"],
+      "fill-opacity": 0.42,
+    },
+  });
+  map.addLayer({
+    id: "hit-line", type: "line", source: "hazards",
+    filter: ["==", ["get", "fid"], -1],
+    paint: {
+      "line-color": ["coalesce", ["get", "line"], ["get", "fill"], "#334155"],
+      "line-width": 2.25, "line-opacity": 0.95,
+    },
+  });
+  map.addLayer({
+    id: "hit-eq", type: "circle", source: "hazards",
+    filter: ["==", ["get", "fid"], -1],
+    paint: {
+      "circle-radius": 7,
+      "circle-color": ["coalesce", ["get", "fill"], "#DC2626"],
+      "circle-stroke-color": "#fff",
+      "circle-stroke-width": 1.5,
+      "circle-opacity": 0.95,
+    },
+  });
+
+  syncOverlayFilters();
+
+  map.fitBounds(
+    [
+      [174.613106, -41.36238],
+      [174.895409, -41.14354],
+    ],
+    { padding: 40, duration: 0 }
+  );
+
+  setIdle("Click inside Wellington City, or search a city address");
+  map.getCanvas().style.cursor = "crosshair";
+  map.on("click", (e) => queryAt(e.lngLat, null));
+
+  await applyUrlState();
+});
+
+GROUPS.forEach((g) => {
+  document.getElementById(`tog-${g.id}`).addEventListener("change", () => {
+    syncOverlayFilters();
+    if (marker) queryAt(marker.getLngLat(), lastPlaceLabel);
+  });
+});
+clearBtn.addEventListener("click", clearPin);
+shareBtn.addEventListener("click", shareUrl);
+
+document.getElementById("search-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const q = qInput.value.trim();
+  if (!q) return;
+  searchBtn.disabled = true;
+  try {
+    const { lng, lat, label } = await geocode(q);
+    map.flyTo({ center: [lng, lat], zoom: 16.5, essential: true });
+    map.once("moveend", () => queryAt({ lng, lat }, label));
+  } catch (err) {
+    setIdle("Address not found — try a Wellington City street address");
+    console.error(err);
+  } finally {
+    searchBtn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
