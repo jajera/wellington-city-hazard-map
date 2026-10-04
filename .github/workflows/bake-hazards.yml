@@ -55,19 +55,18 @@ jobs:
 
           pr="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')"
           if [ -z "$pr" ]; then
+            body="$(printf '%s\n' \
+              '## Summary' \
+              '- Scheduled rebake of `hazards.geojson` from WCC/GWRC ArcGIS layers' \
+              '' \
+              '## Test plan' \
+              '- [ ] Pages deploy succeeds after merge' \
+              '- [ ] Spot-check a known pin still reports expected overlays')"
             pr="$(gh pr create \
               --base main \
               --head "$branch" \
               --title "chore: refresh baked hazards.geojson from upstream layers" \
-              --body "$(cat <<'EOF'
-## Summary
-- Scheduled rebake of `hazards.geojson` from WCC/GWRC ArcGIS layers
-
-## Test plan
-- [ ] Pages deploy succeeds after merge
-- [ ] Spot-check a known pin still reports expected overlays
-EOF
-)")"
+              --body "$body")"
             pr="${pr##*/}"
           fi
 
