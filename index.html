@@ -246,8 +246,12 @@ let marker = null;
 let hitFids = [];
 let nearEq = [];
 let lastPlaceLabel = null;
+/** Bumps when the pin moves so stale elevation replies are ignored */
+let placeQueryId = 0;
 /** Cached [minLng, minLat, maxLng, maxLat] per feature index */
 let bboxes = [];
+/** lng,lat → metres ASL */
+const elevCache = new Map();
 
 const togglesEl = document.getElementById("group-toggles");
 GROUPS.forEach((g) => {
@@ -351,6 +355,7 @@ function citySuburbAt(lng, lat) {
 }
 
 function setIdle(msg) {
+  placeQueryId++;
   verdictEl.className = "verdict idle";
   verdictEl.textContent = msg;
   alsoEl.hidden = true;
@@ -538,6 +543,44 @@ function syncUrl(lngLat, placeLabel) {
   history.replaceState(null, "", url.pathname + url.search + url.hash);
 }
 
+function elevCacheKey(lng, lat) {
+  return `${lat.toFixed(5)},${lng.toFixed(5)}`;
+}
+
+/** Metres above sea level (Open-Meteo DEM). null if unavailable. */
+async function fetchElevationM(lng, lat) {
+  const key = elevCacheKey(lng, lat);
+  if (elevCache.has(key)) return elevCache.get(key);
+  const url = "https://api.open-meteo.com/v1/elevation?" + new URLSearchParams({
+    latitude: String(lat),
+    longitude: String(lng),
+  });
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("elevation HTTP " + res.status);
+  const data = await res.json();
+  const m = data.elevation && data.elevation[0];
+  const value = typeof m === "number" && Number.isFinite(m) ? m : null;
+  elevCache.set(key, value);
+  return value;
+}
+
+function formatPlaceLine(base, elevM) {
+  if (elevM == null) return base;
+  const rounded = Math.abs(elevM) >= 100 ? Math.round(elevM) : Math.round(elevM * 10) / 10;
+  return `${base} · ${rounded} m ASL`;
+}
+
+function setPlaceLine(base, lng, lat) {
+  const qid = ++placeQueryId;
+  placeEl.textContent = base;
+  fetchElevationM(lng, lat).then((m) => {
+    if (qid !== placeQueryId) return;
+    placeEl.textContent = formatPlaceLine(base, m);
+  }).catch((err) => {
+    console.warn("elevation lookup failed", err);
+  });
+}
+
 function shareUrl() {
   if (!marker) return;
   syncUrl(marker.getLngLat(), lastPlaceLabel);
@@ -568,9 +611,13 @@ function queryAt(lngLat, placeLabel, { sync = true } = {}) {
     alsoEl.textContent = "";
     verdictEl.className = "verdict idle";
     verdictEl.textContent = "Outside Wellington City";
-    placeEl.textContent = placeLabel
-      ? `${placeLabel} — not in WCC boundary`
-      : `${lat.toFixed(5)}, ${lng.toFixed(5)} — not in WCC boundary`;
+    setPlaceLine(
+      placeLabel
+        ? `${placeLabel} — not in WCC boundary`
+        : `${lat.toFixed(5)}, ${lng.toFixed(5)} — not in WCC boundary`,
+      lng,
+      lat
+    );
     reportEl.innerHTML =
       "<p class=\"empty-note\">This tool only covers Wellington City. Try a pin inside the city outline.</p>";
     lastPlaceLabel = placeLabel || null;
@@ -612,9 +659,11 @@ function queryAt(lngLat, placeLabel, { sync = true } = {}) {
   paintHits();
 
   const coords = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-  placeEl.textContent = placeLabel
-    ? `${placeLabel} · ${suburb}`
-    : `${suburb} · ${coords}`;
+  setPlaceLine(
+    placeLabel ? `${placeLabel} · ${suburb}` : `${suburb} · ${coords}`,
+    lng,
+    lat
+  );
 
   const present = [];
 
