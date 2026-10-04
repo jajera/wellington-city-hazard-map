@@ -173,7 +173,7 @@ def colours_for(key: str, props: dict) -> tuple[str, str]:
 def main() -> None:
     out = {
         "type": "FeatureCollection",
-        "name": "wellington-house-hazards",
+        "name": "wellington-city-hazards",
         "attribution": (
             "WCC / GWRC published layers (via wcc-emergency-gis-data). "
             "Planning/modelled — not live emergency information."
