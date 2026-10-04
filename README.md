@@ -35,15 +35,17 @@ Weekly (Monday 03:17 UTC) and on `workflow_dispatch`: `.github/workflows/bake-ha
 | Allow auto-merge | On |
 | Ruleset `main` — require PR, **0** approving reviews | On ([ruleset](https://github.com/jajera/wellington-city-hazard-map/rules/24444604)) |
 | Required status checks on `main` | On: `markdown-lint / markdown-lint`, `commitmsg-conform / conform` |
-| Secrets `GH_APP_ID` + `GH_APP_PRIVATE_KEY` | On |
+| Secrets `GH_APP_ID` + `GH_APP_PRIVATE_KEY` | On (App must also be **installed** on this repo) |
 
 ### GitHub App
 
 Bake uses a GitHub App so each run gets a short-lived installation token. That token can open the PR in a way that still triggers required checks (the default `GITHUB_TOKEN` cannot). The App private key does not expire.
 
-**Configured for this repo:** App installed on `wellington-city-hazard-map`; secrets `GH_APP_ID` and `GH_APP_PRIVATE_KEY` set.
+**Secrets on this repo:** `GH_APP_ID` and `GH_APP_PRIVATE_KEY` are set.
 
-To recreate elsewhere: [New GitHub App](https://github.com/settings/apps/new) → Contents + Pull requests (Read and write), webhook off → generate private key → install on the repo →
+**Install required:** the App must be installed on `jajera/wellington-city-hazard-map` (App → **Install App** → this repository). Secrets alone are not enough — without an installation, bake fails with `get-a-repository-installation` 404.
+
+To recreate elsewhere: [New GitHub App](https://github.com/settings/apps/new) → Contents + Pull requests (Read and write), webhook off → generate private key → **install on the repo** →
 
 ```bash
 gh secret set GH_APP_ID --repo OWNER/REPO
