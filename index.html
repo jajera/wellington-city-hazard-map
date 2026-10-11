@@ -193,7 +193,24 @@
 
 <script src="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.js"></script>
 <script>
-const STYLE = "https://tiles.openfreemap.org/styles/liberty";
+// Raster basemap (no API key). OpenFreeMap liberty was leaving a blank white
+// canvas for some clients when vector tiles never painted.
+const STYLE = {
+  version: 8,
+  sources: {
+    esri: {
+      type: "raster",
+      tiles: [
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+      ],
+      tileSize: 256,
+      attribution:
+        "Tiles &copy; Esri &mdash; Source: Esri, OpenStreetMap contributors",
+      maxzoom: 19,
+    },
+  },
+  layers: [{ id: "esri", type: "raster", source: "esri" }],
+};
 const HAZARDS_URL = "./hazards.geojson";
 const CITY_URL = "./wellington-city.geojson";
 const WELLINGTON = [174.7762, -41.2865];
@@ -239,6 +256,11 @@ const map = new maplibregl.Map({
   maxZoom: 18,
 });
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+map.on("error", (e) => {
+  console.error(e && e.error ? e.error : e);
+  const msg = (e && e.error && e.error.message) || "Map failed to load tiles";
+  if (typeof setIdle === "function") setIdle(msg);
+});
 
 let hazards = null;
 let city = null;
