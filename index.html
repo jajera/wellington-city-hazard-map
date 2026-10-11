@@ -193,11 +193,20 @@
 
 <script src="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.js"></script>
 <script>
-// Raster basemap (no API key). OpenFreeMap liberty was leaving a blank white
-// canvas for some clients when vector tiles never painted.
+// Raster basemap (no API key). Prefer OSM (CORS *); keep Esri as a
+// second layer so one blocked host does not leave a white canvas.
 const STYLE = {
   version: 8,
   sources: {
+    osm: {
+      type: "raster",
+      tiles: [
+        "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+      ],
+      tileSize: 256,
+      attribution: "&copy; OpenStreetMap contributors",
+      maxzoom: 19,
+    },
     esri: {
       type: "raster",
       tiles: [
@@ -205,11 +214,15 @@ const STYLE = {
       ],
       tileSize: 256,
       attribution:
-        "Tiles &copy; Esri &mdash; Source: Esri, OpenStreetMap contributors",
+        "Tiles &copy; Esri &mdash; Source: Esri, OpenStreetMap",
       maxzoom: 19,
     },
   },
-  layers: [{ id: "esri", type: "raster", source: "esri" }],
+  layers: [
+    { id: "osm", type: "raster", source: "osm" },
+    // Esri drawn above OSM when it loads; if Esri is blocked, OSM remains.
+    { id: "esri", type: "raster", source: "esri", paint: { "raster-opacity": 1 } },
+  ],
 };
 const HAZARDS_URL = "./hazards.geojson";
 const CITY_URL = "./wellington-city.geojson";
@@ -254,13 +267,21 @@ const map = new maplibregl.Map({
   maxBoundsViscosity: 0.9,
   minZoom: 10,
   maxZoom: 18,
+  failIfMajorPerformanceCaveat: false,
 });
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
 map.on("error", (e) => {
-  console.error(e && e.error ? e.error : e);
-  const msg = (e && e.error && e.error.message) || "Map failed to load tiles";
-  if (typeof setIdle === "function") setIdle(msg);
+  // Tile 404/abort noise is common while panning; only surface real failures.
+  const err = e && e.error ? e.error : e;
+  console.warn(err);
+  const msg = (err && err.message) || "";
+  if (/Failed to initialize WebGL|webgl/i.test(msg) && typeof setIdle === "function") {
+    setIdle("WebGL unavailable — try Chrome/Firefox, not a restricted embedded browser");
+  }
 });
+// Embedded browsers sometimes need an explicit resize after first layout.
+window.addEventListener("load", () => map.resize());
+setTimeout(() => map.resize(), 250);
 
 let hazards = null;
 let city = null;
@@ -827,12 +848,14 @@ async function applyUrlState() {
 }
 
 map.on("load", async () => {
+  map.resize();
+  setIdle("Loading hazard overlays…");
   const [hazRes, cityRes] = await Promise.all([
     fetch(HAZARDS_URL),
     fetch(CITY_URL),
   ]);
   if (!hazRes.ok || !cityRes.ok) {
-    setIdle("Failed to load city / hazard data");
+    setIdle("Failed to load city / hazard data — is http.server running from the repo root?");
     return;
   }
   hazards = await hazRes.json();
